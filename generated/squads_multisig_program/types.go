@@ -1284,6 +1284,192 @@ func (obj *VaultTransactionCreateArgs) UnmarshalWithDecoder(decoder *ag_binary.D
 	return nil
 }
 
+type TransactionMessage struct {
+	// The number of signer pubkeys in the account_keys vec.
+	NumSigners uint8
+
+	// The number of writable signer pubkeys in the account_keys vec.
+	NumWritableSigners uint8
+
+	// The number of writable non-signer pubkeys in the account_keys vec.
+	NumWritableNonSigners uint8
+
+	// The list of unique account public keys (including program IDs) that will be used in the provided instructions.
+	AccountKeys SmallVec[uint8, ag_solanago.PublicKey]
+
+	// The list of instructions to execute.
+	Instructions SmallVec[uint8, CompiledInstruction]
+
+	// List of address table lookups used to load additional accounts
+	// for this transaction.
+	AddressTableLookups SmallVec[uint8, MessageAddressTableLookup]
+}
+
+func (obj TransactionMessage) MarshalWithEncoder(encoder *ag_binary.Encoder) (err error) {
+	// Serialize `NumSigners` param:
+	err = encoder.Encode(obj.NumSigners)
+	if err != nil {
+		return err
+	}
+	// Serialize `NumWritableSigners` param:
+	err = encoder.Encode(obj.NumWritableSigners)
+	if err != nil {
+		return err
+	}
+	// Serialize `NumWritableNonSigners` param:
+	err = encoder.Encode(obj.NumWritableNonSigners)
+	if err != nil {
+		return err
+	}
+	// Serialize `AccountKeys` param:
+	err = encoder.Encode(obj.AccountKeys)
+	if err != nil {
+		return err
+	}
+	// Serialize `Instructions` param:
+	err = encoder.Encode(obj.Instructions)
+	if err != nil {
+		return err
+	}
+	// Serialize `AddressTableLookups` param:
+	err = encoder.Encode(obj.AddressTableLookups)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (obj *TransactionMessage) UnmarshalWithDecoder(decoder *ag_binary.Decoder) (err error) {
+	// Deserialize `NumSigners`:
+	err = decoder.Decode(&obj.NumSigners)
+	if err != nil {
+		return err
+	}
+	// Deserialize `NumWritableSigners`:
+	err = decoder.Decode(&obj.NumWritableSigners)
+	if err != nil {
+		return err
+	}
+	// Deserialize `NumWritableNonSigners`:
+	err = decoder.Decode(&obj.NumWritableNonSigners)
+	if err != nil {
+		return err
+	}
+	// Deserialize `AccountKeys`:
+	err = decoder.Decode(&obj.AccountKeys)
+	if err != nil {
+		return err
+	}
+	// Deserialize `Instructions`:
+	err = decoder.Decode(&obj.Instructions)
+	if err != nil {
+		return err
+	}
+	// Deserialize `AddressTableLookups`:
+	err = decoder.Decode(&obj.AddressTableLookups)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+type CompiledInstruction struct {
+	ProgramIdIndex uint8
+
+	// Indices into the tx's `account_keys` list indicating which accounts to pass to the instruction.
+	AccountIndexes SmallVec[uint8, uint8]
+
+	// Instruction data.
+	Data SmallVec[uint16, uint8]
+}
+
+func (obj CompiledInstruction) MarshalWithEncoder(encoder *ag_binary.Encoder) (err error) {
+	// Serialize `ProgramIdIndex` param:
+	err = encoder.Encode(obj.ProgramIdIndex)
+	if err != nil {
+		return err
+	}
+	// Serialize `AccountIndexes` param:
+	err = encoder.Encode(obj.AccountIndexes)
+	if err != nil {
+		return err
+	}
+	// Serialize `Data` param:
+	err = encoder.Encode(obj.Data)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (obj *CompiledInstruction) UnmarshalWithDecoder(decoder *ag_binary.Decoder) (err error) {
+	// Deserialize `ProgramIdIndex`:
+	err = decoder.Decode(&obj.ProgramIdIndex)
+	if err != nil {
+		return err
+	}
+	// Deserialize `AccountIndexes`:
+	err = decoder.Decode(&obj.AccountIndexes)
+	if err != nil {
+		return err
+	}
+	// Deserialize `Data`:
+	err = decoder.Decode(&obj.Data)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+type MessageAddressTableLookup struct {
+	// Address lookup table account key
+	AccountKey ag_solanago.PublicKey
+
+	// List of indexes used to load writable account addresses
+	WritableIndexes SmallVec[uint8, uint8]
+
+	// List of indexes used to load readonly account addresses
+	ReadonlyIndexes SmallVec[uint8, uint8]
+}
+
+func (obj MessageAddressTableLookup) MarshalWithEncoder(encoder *ag_binary.Encoder) (err error) {
+	// Serialize `AccountKey` param:
+	err = encoder.Encode(obj.AccountKey)
+	if err != nil {
+		return err
+	}
+	// Serialize `WritableIndexes` param:
+	err = encoder.Encode(obj.WritableIndexes)
+	if err != nil {
+		return err
+	}
+	// Serialize `ReadonlyIndexes` param:
+	err = encoder.Encode(obj.ReadonlyIndexes)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (obj *MessageAddressTableLookup) UnmarshalWithDecoder(decoder *ag_binary.Decoder) (err error) {
+	// Deserialize `AccountKey`:
+	err = decoder.Decode(&obj.AccountKey)
+	if err != nil {
+		return err
+	}
+	// Deserialize `WritableIndexes`:
+	err = decoder.Decode(&obj.WritableIndexes)
+	if err != nil {
+		return err
+	}
+	// Deserialize `ReadonlyIndexes`:
+	err = decoder.Decode(&obj.ReadonlyIndexes)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 type Member struct {
 	Key         ag_solanago.PublicKey
 	Permissions Permissions
@@ -1824,6 +2010,27 @@ func (obj *ConfigActionSetRentCollector) UnmarshalWithDecoder(decoder *ag_binary
 }
 
 func (_ *ConfigActionSetRentCollector) isConfigAction() {}
+
+type Permission ag_binary.BorshEnum
+
+const (
+	PermissionInitiate Permission = iota
+	PermissionVote
+	PermissionExecute
+)
+
+func (value Permission) String() string {
+	switch value {
+	case PermissionInitiate:
+		return "Initiate"
+	case PermissionVote:
+		return "Vote"
+	case PermissionExecute:
+		return "Execute"
+	default:
+		return ""
+	}
+}
 
 type ProposalStatus interface {
 	isProposalStatus()

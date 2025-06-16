@@ -2778,6 +2778,133 @@
       }
     },
     {
+      "name": "TransactionMessage",
+      "docs": [
+        "Unvalidated instruction data, must be treated as untrusted."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "numSigners",
+            "docs": [
+              "The number of signer pubkeys in the account_keys vec."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "numWritableSigners",
+            "docs": [
+              "The number of writable signer pubkeys in the account_keys vec."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "numWritableNonSigners",
+            "docs": [
+              "The number of writable non-signer pubkeys in the account_keys vec."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "accountKeys",
+            "docs": [
+              "The list of unique account public keys (including program IDs) that will be used in the provided instructions."
+            ],
+            "type": {
+              "defined": "SmallVec<u8,Pubkey>"
+            }
+          },
+          {
+            "name": "instructions",
+            "docs": [
+              "The list of instructions to execute."
+            ],
+            "type": {
+              "defined": "SmallVec<u8,CompiledInstruction>"
+            }
+          },
+          {
+            "name": "addressTableLookups",
+            "docs": [
+              "List of address table lookups used to load additional accounts",
+              "for this transaction."
+            ],
+            "type": {
+              "defined": "SmallVec<u8,MessageAddressTableLookup>"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "CompiledInstruction",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "programIdIndex",
+            "type": "u8"
+          },
+          {
+            "name": "accountIndexes",
+            "docs": [
+              "Indices into the tx's `account_keys` list indicating which accounts to pass to the instruction."
+            ],
+            "type": {
+              "defined": "SmallVec<u8,u8>"
+            }
+          },
+          {
+            "name": "data",
+            "docs": [
+              "Instruction data."
+            ],
+            "type": {
+              "defined": "SmallVec<u16,u8>"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "MessageAddressTableLookup",
+      "docs": [
+        "Address table lookups describe an on-chain address lookup table to use",
+        "for loading more readonly and writable accounts in a single tx."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "accountKey",
+            "docs": [
+              "Address lookup table account key"
+            ],
+            "type": "publicKey"
+          },
+          {
+            "name": "writableIndexes",
+            "docs": [
+              "List of indexes used to load writable account addresses"
+            ],
+            "type": {
+              "defined": "SmallVec<u8,u8>"
+            }
+          },
+          {
+            "name": "readonlyIndexes",
+            "docs": [
+              "List of indexes used to load readonly account addresses"
+            ],
+            "type": {
+              "defined": "SmallVec<u8,u8>"
+            }
+          }
+        ]
+      }
+    },
+    {
       "name": "Member",
       "type": {
         "kind": "struct",
@@ -3088,6 +3215,23 @@
                 }
               }
             ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "Permission",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Initiate"
+          },
+          {
+            "name": "Vote"
+          },
+          {
+            "name": "Execute"
           }
         ]
       }

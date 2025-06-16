@@ -11,7 +11,10 @@ import (
 	"time"
 
 	"github.com/gagliardetto/solana-go"
+	addresslookuptable "github.com/gagliardetto/solana-go/programs/address-lookup-table"
+	"github.com/gagliardetto/solana-go/programs/system"
 	"github.com/gagliardetto/solana-go/rpc"
+
 	sendAndConfirmTransaction "github.com/gagliardetto/solana-go/rpc/sendAndConfirmTransaction"
 	"github.com/gagliardetto/solana-go/rpc/ws"
 	"github.com/spf13/cobra"
@@ -22,53 +25,52 @@ import (
 	ag_binary "github.com/gagliardetto/binary"
 )
 
-// uint64ToLEBytes converts a uint64 to a little-endian byte slice
-func uint64ToLEBytes(value uint64) []byte {
-	bytes := make([]byte, 8)
-	bytes[0] = byte(value)
-	bytes[1] = byte(value >> 8)
-	bytes[2] = byte(value >> 16)
-	bytes[3] = byte(value >> 24)
-	bytes[4] = byte(value >> 32)
-	bytes[5] = byte(value >> 40)
-	bytes[6] = byte(value >> 48)
-	bytes[7] = byte(value >> 56)
-	return bytes
+func convertToUint8Slice(ints []uint16) []uint8 {
+	result := make([]uint8, len(ints))
+	for i, v := range ints {
+		result[i] = uint8(v)
+	}
+	return result
 }
 
 // createTransactionMessageBytes creates a byte array representing a transaction message for a transfer
-func createTransactionMessageBytes(ix solana.Instruction, vaultPDA, recipientPubkey solana.PublicKey, lamports uint64) []byte {
-	// Convert instruction accounts to a slice of PublicKeys
-	accountKeys := []solana.PublicKey{
-		vaultPDA,               // First account is the vault (signer, writable)
-		recipientPubkey,        // Second account is the recipient (writable)
-		solana.SystemProgramID, // Third account is the system program
-	}
-
-	// Create a VaultTransactionMessage
-	txMessage := squads_multisig_program.VaultTransactionMessage{
-		NumSigners:            1, // Only vault is a signer
-		NumWritableSigners:    1, // Vault is writable
-		NumWritableNonSigners: 1, // Recipient is writable non-signer
-		AccountKeys:           accountKeys,
-		Instructions: []squads_multisig_program.MultisigCompiledInstruction{
-			{
-				ProgramIdIndex: 2,                                                        // Index of SystemProgram in accountKeys
-				AccountIndexes: []byte{0, 1},                                             // Indexes of Vault and Recipient
-				Data:           append([]byte{2, 0, 0, 0}, uint64ToLEBytes(lamports)...), // Transfer instruction
-			},
+func createTransactionMessageBytes(payer solana.PublicKey, instructions []solana.Instruction, recentBlockhash solana.Hash, addressLookupTableAccounts []addresslookuptable.KeyedAddressLookupTable) ([]byte, error) {
+	// Compile the message to V0 format
+	compiledMessage := CompileToWrappedMessageV0(payer,
+		recentBlockhash,
+		instructions,
+		addressLookupTableAccounts)
+	txMsg := squads_multisig_program.TransactionMessage{
+		NumSigners:            uint8(compiledMessage.Header.NumRequiredSignatures),
+		NumWritableSigners:    uint8(compiledMessage.Header.NumRequiredSignatures - compiledMessage.Header.NumReadonlySignedAccounts),
+		NumWritableNonSigners: uint8(len(compiledMessage.AccountKeys)) - compiledMessage.Header.NumRequiredSignatures - compiledMessage.Header.NumReadonlyUnsignedAccounts,
+		AccountKeys: squads_multisig_program.SmallVec[uint8, solana.PublicKey]{
+			Data: compiledMessage.AccountKeys,
 		},
-		AddressTableLookups: []squads_multisig_program.MultisigMessageAddressTableLookup{}, // No lookups
+		Instructions:        squads_multisig_program.SmallVec[uint8, squads_multisig_program.CompiledInstruction]{},
+		AddressTableLookups: squads_multisig_program.SmallVec[uint8, squads_multisig_program.MessageAddressTableLookup]{},
+	}
+	for _, v := range compiledMessage.Instructions {
+		txMsg.Instructions.Data = append(txMsg.Instructions.Data, squads_multisig_program.CompiledInstruction{
+			ProgramIdIndex: uint8(v.ProgramIDIndex),
+			AccountIndexes: squads_multisig_program.SmallVec[uint8, uint8]{Data: convertToUint8Slice(v.Accounts)},
+			Data:           squads_multisig_program.SmallVec[uint16, uint8]{Data: v.Data},
+		})
+	}
+	for _, v := range compiledMessage.AddressTableLookups {
+		txMsg.AddressTableLookups.Data = append(txMsg.AddressTableLookups.Data, squads_multisig_program.MessageAddressTableLookup{
+			AccountKey:      v.AccountKey,
+			WritableIndexes: squads_multisig_program.SmallVec[uint8, uint8]{Data: v.WritableIndexes},
+			ReadonlyIndexes: squads_multisig_program.SmallVec[uint8, uint8]{Data: v.ReadonlyIndexes},
+		})
 	}
 
-	// Serialize the message to bytes using borsh encoder
+	// encode custom
 	buf := new(bytes.Buffer)
-	err := ag_binary.NewBorshEncoder(buf).Encode(txMessage)
-	if err != nil {
-		log.Fatalf("Failed to encode transaction message: %v", err)
+	if err := squads_multisig_program.NewEncoder(buf).Encode(&txMsg); err != nil {
+		return nil, err
 	}
-
-	return buf.Bytes()
+	return buf.Bytes(), nil
 }
 
 // fetchMultisigAccount fetches and decodes a multisig account
@@ -192,24 +194,24 @@ func runCreateTransaction(cmd *cobra.Command, args []string) {
 			float64(vaultBalance)/1e9, amount)
 	}
 
+	// Get latest blockhash
+	hash, err := client.GetLatestBlockhash(ctx, rpc.CommitmentFinalized)
+	if err != nil {
+		log.Fatalf("Failed to get latest blockhash: %v", err)
+	}
+
 	// Create the transfer instruction - use system program's Transfer instruction directly
-	transferIx := solana.NewInstruction(
-		solana.SystemProgramID,
-		solana.AccountMetaSlice{
-			solana.Meta(vaultPDA).WRITE(),
-			solana.Meta(recipientPubkey).WRITE(),
-		},
-		// The data layout for System Program's Transfer instruction:
-		// [0] - instruction index (2 = Transfer)
-		// [1-8] - lamports (uint64 LE)
-		append(
-			[]byte{2, 0, 0, 0}, // instruction index 2 = Transfer
-			uint64ToLEBytes(lamports)...,
-		),
-	)
+	transferIx := system.NewTransferInstruction(
+		lamports,
+		vaultPDA,
+		recipientPubkey,
+	).Build()
 
 	// Prepare transaction message bytes for the vault transaction
-	txMessageBytes := createTransactionMessageBytes(transferIx, vaultPDA, recipientPubkey, lamports)
+	txMessageBytes, err := createTransactionMessageBytes(vaultPDA, []solana.Instruction{transferIx}, hash.Value.Blockhash, nil)
+	if err != nil {
+		log.Fatalf("Failed to create transaction message bytes: %v", err)
+	}
 
 	// Prepare transaction index for the new transaction
 	transactionIndex := multisigAccount.TransactionIndex + 1
@@ -271,12 +273,6 @@ func runCreateTransaction(cmd *cobra.Command, args []string) {
 		).Build()
 
 		instructions = append(instructions, approveIx)
-	}
-
-	// Get latest blockhash
-	hash, err := client.GetLatestBlockhash(ctx, rpc.CommitmentFinalized)
-	if err != nil {
-		log.Fatalf("Failed to get latest blockhash: %v", err)
 	}
 
 	// Create transaction
